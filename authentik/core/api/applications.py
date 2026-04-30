@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from copy import copy
 
 from django.core.cache import cache
-from django.db.models import Case, Q, QuerySet
+from django.db.models import Case, QuerySet
 from django.db.models.expressions import When
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
@@ -120,6 +120,7 @@ class ApplicationSerializer(ModelSerializer):
             "meta_publisher",
             "policy_engine_mode",
             "group",
+            "meta_hide",
         ]
         extra_kwargs = {
             "backchannel_providers": {"required": False},
@@ -278,19 +279,17 @@ class ApplicationViewSet(UsedByMixin, ModelViewSet):
         if superuser_full_list and request.user.is_superuser:
             return super().list(request)
 
-        only_with_launch_url = str(
-            request.query_params.get("only_with_launch_url", "false")
-        ).lower()
+        only_with_launch_url = (
+            str(request.query_params.get("only_with_launch_url", "false")).lower()
+        ) == "true"
 
         queryset = self._filter_queryset_for_list(self.get_queryset())
-        if only_with_launch_url == "true":
+        queryset = queryset.exclude(meta_hide=True)
+        if only_with_launch_url:
             # Pre-filter at DB level to skip expensive per-app policy evaluation
-            # for apps that can never appear in the launcher:
-            # - No meta_launch_url AND no provider: no possible launch URL
-            # - meta_launch_url="blank://blank": documented convention to hide from launcher
-            queryset = queryset.exclude(
-                Q(meta_launch_url="", provider__isnull=True) | Q(meta_launch_url="blank://blank")
-            )
+            # for apps that can never appear in the launcher (no meta_launch_url
+            # and no provider, so no possible launch URL).
+            queryset = queryset.exclude(meta_launch_url="", provider__isnull=True)
         paginator: Pagination = self.paginator
         paginated_apps = paginator.paginate_queryset(queryset, request)
 
@@ -317,7 +316,7 @@ class ApplicationViewSet(UsedByMixin, ModelViewSet):
         if should_cache:
             allowed_applications = cache.get(
                 user_app_cache_key(
-                    self.request.user.pk, paginator.page.number, only_with_launch_url == "true"
+                    self.request.user.pk, paginator.page.number, only_with_launch_url
                 )
             )
             if allowed_applications:
@@ -329,13 +328,13 @@ class ApplicationViewSet(UsedByMixin, ModelViewSet):
                 allowed_applications = self._get_allowed_applications(paginated_apps)
                 cache.set(
                     user_app_cache_key(
-                        self.request.user.pk, paginator.page.number, only_with_launch_url == "true"
+                        self.request.user.pk, paginator.page.number, only_with_launch_url
                     ),
                     allowed_applications,
                     timeout=86400,
                 )
 
-        if only_with_launch_url == "true":
+        if only_with_launch_url:
             allowed_applications = self._filter_applications_with_launch_url(allowed_applications)
 
         serializer = self.get_serializer(allowed_applications, many=True)
