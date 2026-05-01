@@ -46,7 +46,7 @@ export class AkStatusLabel extends AKElement {
     static styles = [PFLabel, Styles];
 
     @property({ type: Boolean })
-    public good: boolean | null = null;
+    public good: boolean = false;
 
     @property({ type: String, attribute: "good-label" })
     public goodLabel = msg("Yes");
