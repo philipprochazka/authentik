@@ -101,7 +101,6 @@ export default defineConfig({
             dependencies: ["prerequisites"],
             use: {
                 ...devices["Desktop Chrome"],
-                headless: false,
             },
         },
     ],
